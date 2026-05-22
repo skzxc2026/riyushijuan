@@ -534,8 +534,13 @@ def write_html(payload: dict) -> None:
   <style>
     body {{ background:#f6f8fb; color:#1f2937; }}
     .navbar {{ height:56px; }}
-    .shell {{ display:grid; grid-template-columns:260px minmax(0,1fr); height:calc(100vh - 56px); overflow:hidden; }}
+    .shell {{ display:grid; grid-template-columns:260px minmax(0,1fr); height:calc(100vh - 56px); overflow:hidden; transition:grid-template-columns .2s ease; }}
+    .shell.nav-collapsed {{ grid-template-columns:54px minmax(0,1fr); }}
     .side {{ background:#151335; color:#e0e7ff; padding:14px; overflow:auto; }}
+    .nav-toggle {{ width:100%; border:1px solid #37306b; background:#312e81; color:white; border-radius:8px; padding:9px 6px; margin-bottom:12px; cursor:pointer; font-weight:800; }}
+    .shell.nav-collapsed .side {{ padding:10px 8px; overflow:hidden; }}
+    .shell.nav-collapsed .side-content {{ display:none; }}
+    .shell.nav-collapsed .nav-toggle {{ writing-mode:vertical-rl; min-height:92px; padding:8px 4px; }}
     .main {{ overflow:auto; }}
     .exam-tab,.qbtn {{ width:100%; border:1px solid #37306b; background:#1e1b4b; color:#c7d2fe; border-radius:8px; padding:9px; margin-bottom:8px; cursor:pointer; text-align:left; }}
     .exam-tab.active,.qbtn.active {{ background:#4f46e5; color:white; border-color:#818cf8; }}
@@ -556,6 +561,7 @@ def write_html(payload: dict) -> None:
     .paper-page-label {{ font-size:12px; color:#64748b; font-weight:700; margin:2px 0 -6px; }}
     .right-stack {{ display:grid; gap:14px; }}
     .grammar-list {{ display:grid; gap:10px; }}
+    .grammar-scroll {{ max-height:260px; overflow-y:auto; padding-right:6px; }}
     .grammar-item {{ border-left:4px solid #f97316; background:#fff7ed; border-radius:8px; padding:10px 12px; }}
     .grammar-item b {{ color:#9a3412; }}
     .jp {{ white-space:pre-wrap; font-family:var(--font-jp); font-size:15px; line-height:1.85; }}
@@ -566,17 +572,20 @@ def write_html(payload: dict) -> None:
     .note {{ border-left:4px solid #4f46e5; background:#eef2ff; padding:10px 12px; border-radius:8px; margin-bottom:10px; }}
     .warn {{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:8px; padding:10px 12px; margin-bottom:12px; }}
     .hidden {{ display:none!important; }}
-    @media (max-width:900px) {{ .shell{{grid-template-columns:1fr;height:auto;overflow:visible}} .grid{{grid-template-columns:1fr}} .hero{{align-items:flex-start;flex-direction:column}} }}
+    @media (max-width:900px) {{ .shell,.shell.nav-collapsed{{grid-template-columns:1fr;height:auto;overflow:visible}} .shell.nav-collapsed .side-content{{display:block}} .shell.nav-collapsed .nav-toggle{{writing-mode:horizontal-tb;min-height:0}} .grid{{grid-template-columns:1fr}} .hero{{align-items:flex-start;flex-direction:column}} }}
   </style>
 </head>
 <body>
   <nav class="navbar"><div class="nav-brand">高考日语双卷解析</div><div class="nav-center" id="navTitle"></div><div class="nav-links"><span class="nav-link active">60题答案已校验</span></div></nav>
-  <div class="shell">
+  <div class="shell" id="shell">
     <aside class="side">
-      <div style="font-weight:800;margin:0 0 8px">试卷切换</div>
-      <div id="examTabs"></div>
-      <div style="font-weight:800;margin:16px 0 8px">题号导航</div>
-      <div class="qgrid" id="qnav"></div>
+      <button class="nav-toggle" id="navToggle" type="button">隐藏题号</button>
+      <div class="side-content">
+        <div style="font-weight:800;margin:0 0 8px">试卷切换</div>
+        <div id="examTabs"></div>
+        <div style="font-weight:800;margin:16px 0 8px">题号导航</div>
+        <div class="qgrid" id="qnav"></div>
+      </div>
     </aside>
     <main class="main">
       <section class="hero">
@@ -589,10 +598,10 @@ def write_html(payload: dict) -> None:
         </div>
       </section>
       <section class="grid" id="questionView">
-        <div class="panel"><div class="head"><h2 id="qTitle"></h2><span class="answer" id="qAnswer"></span></div><div class="body"><div class="warn">题号与答案来自校验后的答案表；日文原文和选项已加 ruby 假名标音。</div><div class="jp" id="qBody"></div><div class="note" style="margin-top:12px"><b>中文翻译</b><br><span id="qCn"></span></div></div></div>
+        <div class="panel"><div class="head"><h2 id="qTitle"></h2><span class="answer" id="qAnswer"></span></div><div class="body"><div class="jp" id="qBody"></div><div class="note" style="margin-top:12px"><b>中文翻译</b><br><span id="qCn"></span></div></div></div>
         <div class="right-stack">
           <div class="panel"><div class="head"><h2>原卷连续对照</h2><span id="pageLabel">可滚动查看整卷</span></div><div class="body"><div class="paper-scroll" id="paperScroller"></div></div></div>
-          <div class="panel"><div class="head"><h2>当前题语法解析</h2><span>自动匹配重点表达</span></div><div class="body"><div class="grammar-list" id="currentGrammar"></div></div></div>
+          <div class="panel"><div class="head"><h2>当前题语法解析</h2><span>自动匹配重点表达</span></div><div class="body grammar-scroll"><div class="grammar-list" id="currentGrammar"></div></div></div>
         </div>
       </section>
       <section class="grid hidden" id="paperView"></section>
@@ -648,6 +657,10 @@ def write_html(payload: dict) -> None:
         document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b===tb));
         ['question','paper','answers','grammar'].forEach(v=>document.getElementById(v+'View').classList.toggle('hidden', v!==tb.dataset.view));
       }}
+    }});
+    navToggle.addEventListener('click', () => {{
+      const collapsed = shell.classList.toggle('nav-collapsed');
+      navToggle.textContent = collapsed ? '展开题号' : '隐藏题号';
     }});
     renderAll();
   </script>
